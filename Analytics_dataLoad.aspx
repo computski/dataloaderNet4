@@ -1,4 +1,4 @@
-﻿<%@ Page Language="vb" AutoEventWireup="false" CodeBehind="Analytics_dataLoad.aspx.vb" Inherits="PCManalytics.Analytics_dataLoad" Trace="true" %>
+﻿<%@ Page Language="vb" AutoEventWireup="false" CodeBehind="Analytics_dataLoad.aspx.vb" Inherits="PCManalytics.Analytics_dataLoad" Trace="false" %>
 
 <!DOCTYPE html>
 
@@ -13,7 +13,7 @@
 <body>
     <form id="form1" runat="server">
         <div>
-             	<div id="bannerApp"><span style="FONT-VARIANT: normal; FONT-SIZE: 11px; FONT-WEIGHT: normal" id="spanLogin" runat="server">login credentials</span> &nbsp;&nbsp;&nbsp;&nbsp;Product explorer&nbsp;</div>
+             	<div id="bannerApp"><span style="FONT-VARIANT: normal; FONT-SIZE: 11px; FONT-WEIGHT: normal" id="spanLogin" runat="server">login credentials</span> &nbsp;&nbsp;&nbsp;&nbsp;Pcm Analytics - load data v1&nbsp;</div>
 							
     <div id="statusBar" runat="server" EnableViewState="false"></div>
 	
@@ -35,8 +35,8 @@
     IMPORTANT: max upload size of all files is 10M, you are advised to zip all csv files into a single archive<br />
     <asp:Literal ID="litDataResult" runat="server" />
     <br />
-         <asp:button ID="bTest" runat="server" Text="test" />
-         <asp:Button ID="Button1" runat="server" Text="Button" />
+         <asp:button ID="bTest" runat="server" Text="test" Visible="false" />
+         <asp:Button ID="Button1" runat="server" Text="Button" Visible="false" />
          <asp:GridView ID="gvDebug" runat="server" />
     
     

@@ -8,6 +8,23 @@ Public Class Analytics_dataLoad
     Dim sData As String = ConfigurationManager.ConnectionStrings("sData").ConnectionString
     Dim sUserFiles As String = ConfigurationManager.AppSettings("strUserFiles")
 
+    'notes
+    'have a big problem with data import
+    'reading csv into a dataset is fast, but the dataadaptor update is really slow at 80 rec/sec
+    'options are
+    '
+    'link the table, then use bulk DAO3.6 update, however type coertion is a problem here
+    'so we'd need to properly specify an import spec
+    '
+    'read a dataset then perform a series of discrete DAO record updates.  need to test this in access
+    'as want to test whether you can wrap in a transaction
+    '
+    '
+
+
+
+
+
     Protected Sub Page_Load(ByVal sender As Object, ByVal e As System.EventArgs) Handles Me.Load
 
     End Sub
@@ -74,7 +91,7 @@ Public Class Analytics_dataLoad
         litDataResult.Text = sb.ToString
 
     End Sub
-    Function processPBfile(ByVal fc As System.IO.Stream) As String
+    Function processPBfileTABLEDEF(ByVal fc As System.IO.Stream) As String
         '*** look at file, what's the majority billing period?  does that database table exist?  if no, create it, otherwise consider appending to it based on
         '*** metadata
         'WARNING: there is a max request size (and on IIS7 you need to set on server too).  system will bomb with no error page if it is exceeded.
@@ -109,6 +126,19 @@ Public Class Analytics_dataLoad
 
         Dim dbEngine As New DAO.DBEngine
         Dim db As DAO.Database = dbEngine.OpenDatabase("C:\Users\Julian\Documents\Visual Studio 2017\source\PCManalytics\primebillerdata.mdb", False)
+
+        '2018-10-31 usiing oledb for updates is slow.  dao 3.6 is faster, but we have a problem.
+        'if we link to the table, the datatypes are not co-erced for us.  therefore i cannot just
+        'select into the target table due to type conversion errors.
+        '
+        'several poss fixes;
+        '1. is to define all the types in MS access when setting up the table link.  i am not sure this can cope with date formats
+        '2. is to import the data as csv and co-erce into dtI, from here we build a long SQL string of individual insert-values
+        'statements each separated by a semi colon.  we then execute these with db.execte  (or can try executenonquery)
+        'this should be faster.
+
+
+
 
 
         Try
@@ -496,28 +526,20 @@ Public Class Analytics_dataLoad
 
     End Function
 
-    Function processPBfileEARLIER(ByVal fc As System.IO.Stream) As String
+    Function processPBfile(ByVal fc As System.IO.Stream) As String
         '*** look at file, what's the majority billing period?  does that database table exist?  if no, create it, otherwise consider appending to it based on
         '*** metadata
         'WARNING: there is a max request size (and on IIS7 you need to set on server too).  system will bomb with no error page if it is exceeded.
         'in principle, we can demand all files over 10M be sent up as zips
         'https://stackoverflow.com/questions/288612/how-to-increase-the-max-upload-file-size-in-asp-net
 
-        'ARGH, there are a lot of type conversion errors happening, really we need to load the ultimate target table
-        'schema (tblSource) and parse these header rows against it.  we should also drop some cols to reduce data
-        'e.g. "" wont convert to null when we try to copy the data over to a double later.
 
-        'can either pull in the schema, apply this to column heads (via schema.contains) and then type convert as we load each row
-        'or leave as text, and type convert at end, running down each column and converting values before finally
-        'setting the type on the col (though we may not be able to do this on a loaded recordset)
-        'Dim oDA As New OleDbDataAdapter("SELECT * FROM " & rMeta("Charge Period") & " WHERE ID=0", dConn)
-        ' oDA.Fill(oDS, "target")
 
-        'REVISED
         'LOAD a copy of the target table schema
+        Dim oConn As New OleDbConnection(sConn)
         Dim oDS As New DataSet
         Dim oDA As New OleDbDataAdapter("SELECT * FROM tblSource WHERE ID=0", sData)
-        oDA.Fill(oDS, "source")
+        oDA.Fill(oDS, "template")
 
 
 
@@ -526,12 +548,24 @@ Public Class Analytics_dataLoad
 
 
 
-        '*** attempted fixes
-        'A. add sequencial ID after loading dtI
-        '
+        '*** get field lengths
+        'https://blogs.technet.microsoft.com/heyscriptingguy/2007/10/03/hey-scripting-guy-how-can-i-retrieve-the-field-size-and-a-sample-record-for-all-the-tables-and-fields-in-an-office-access-database/
+        '*** oledb and acceess don't populate fieldSize property, instead you have to pull from schema and then write it back
+        '*** to the template table
+        oConn.Open()
+        Dim T As New DataTable
+        T = getColLengths("tblSource", oConn)
 
+        For Each myR As DataRow In T.Rows
+            Dim myC = oDS.Tables("template").Columns.Item(myR("COLUMN_NAME").ToString)
+            Trace.Warn(myC.ColumnName & " " & myC.DataType.ToString)
+            If myC.DataType.ToString = "System.String" Then
+                myC.MaxLength = myR("CHARACTER_MAXIMUM_LENGTH")
+                Trace.Warn(myR("CHARACTER_MAXIMUM_LENGTH"))
+            End If
+        Next
+        Trace.Warn("field lengths set")
 
-        'Trace.Warn("primarykeyCount " & oDS.Tables("source").PrimaryKey.Count)
 
         '*** the target table will contain column data types and also allow us to cut down on the columns captured
         '*** prior textparser code could handle multiple instances of the same columnName.  we do not need to support this
@@ -549,7 +583,7 @@ Public Class Analytics_dataLoad
         afile.Delimiters = New String() {","}
         afile.HasFieldsEnclosedInQuotes = True
 
-        Dim dtI As New DataTable("source")
+        Dim dtI As New DataTable("import")
         Dim r As Long = 0
         Dim c As Integer = 0
         Dim dr As DataRow
@@ -568,11 +602,11 @@ Public Class Analytics_dataLoad
                         Dim inx As Integer
                         '*** remove spaces and non word chars from the 
                         s = Regex.Replace(s, "[\s\W\.\?]+", String.Empty)
-                        inx = oDS.Tables("source").Columns.IndexOf(s.ToString)
+                        inx = oDS.Tables("template").Columns.IndexOf(s.ToString)
                         If inx = -1 Then
                             dtI.Columns.Add(s & "_IGNORE")
                         Else
-                            dtI.Columns.Add(s, oDS.Tables("source").Columns(inx).DataType)
+                            dtI.Columns.Add(s, oDS.Tables("template").Columns(inx).DataType)
                         End If
 
                     Else
@@ -612,7 +646,7 @@ Public Class Analytics_dataLoad
         dtI.Columns.Add(dc)
         dc.SetOrdinal(0)
 
-        '*** add a ssequence number
+        '*** add a ssequence number ONLY NEEDED IF USING DATAADAAPTOR later
         r = 1
         For Each myR As DataRow In dtI.Rows
             myR("ID") = r
@@ -625,8 +659,8 @@ Public Class Analytics_dataLoad
 
         '*** check columncounts match
         Trace.Warn(dtI.Columns.Count)
-        Trace.Warn(oDS.Tables("source").Columns.Count)
-        If dtI.Columns.Count <> oDS.Tables("source").Columns.Count Then Throw New ArgumentException("column count on import does not match tblSource")
+        Trace.Warn(oDS.Tables("template").Columns.Count)
+        If dtI.Columns.Count <> oDS.Tables("template").Columns.Count Then Throw New ArgumentException("column count on import does not match tblSource")
 
         '*** calculate metadata for this file
         Dim myView As DataView = dtI.DefaultView
@@ -643,9 +677,15 @@ Public Class Analytics_dataLoad
         '*** so now we have record counts per charge period.  find the largest and this is the base table we need to work with.
         '*** we will also back fill prior months, but only going back 2 months.
 
+        'CHECK there are no empty string names, remove any found
+
+        For i = dtMeta.Rows.Count - 1 To 0 Step -1
+            If String.IsNullOrEmpty(dtMeta.Rows(i).Item("chargeperiod")) Then dtMeta.Rows.RemoveAt(i)
+        Next
+
         myView = dtMeta.DefaultView
         myView.Sort = "[ChargePeriod] DESC"
-        statusBar.InnerText = myView.Item(0).Item("ChargePeriod")
+        'statusBar.InnerText = myView.Item(0).Item("ChargePeriod")
 
 
         Dim dConn As New OleDbConnection(sData)
@@ -661,29 +701,19 @@ Public Class Analytics_dataLoad
         '*** loop for the the top three entries in dtMeta, create a table as required, or look at the target table
         '*** metadata before writing to it
         r = 0
-
-        '*** need to this next part as a TRANSACTION where we update multiple tables at once, or not at all
-        '*** this means each table has to be given a new name
         dConn.Open()
-        'Dim myTrans = dConn.BeginTransaction(IsolationLevel.ReadCommitted)
 
-        'ARGH, for transactions, its ok to create empty tables even if we don't ultimately write to them
-        'so really the transaction is only needed at the table-write time
-
-
+        'LOOP FOR EACH REQUIRED TABLE, CREATE IF NECESSARY and add a primary key
 
         For Each rMeta In dtMeta.Rows
             '*** does this table exist already?
-            Trace.Warn("processing records for " & rMeta("chargePeriod"))
+            Trace.Warn("checking table exists for " & rMeta("chargePeriod"))
             Dim thisPeriod As String = rMeta("chargePeriod")
 
             Dim foundrows() As DataRow = dtTable.Select("TABLE_NAME='" & thisPeriod & "'")
             If foundrows.Count = 0 Then
                 '*** create the table
                 Dim oCmd As New OleDb.OleDbCommand(String.Concat("SELECT tblSource.* INTO ", thisPeriod, " FROM tblSource WHERE ID=0"), dConn)
-
-                'dConn.Open()
-                'oCmd.Transaction = myTrans
                 oCmd.ExecuteNonQuery()
                 Trace.Warn("table created")
                 '*** now set a primary key on the ID field, else commmandbuilder update will later fail
@@ -693,105 +723,113 @@ Public Class Analytics_dataLoad
             End If
             '*** at this point we have either found the table, or created it, so either way continue because it exists
 
-            '*** now check the metadata on that table.  The count of records for this [Bill run ID] must be less than the count
-            '*** in Meta data, else we would be double-loading
-            '*** assumes Bill Run ID is a string
-            oDA = New OleDbDataAdapter("SELECT * FROM " & thisPeriod & " WHERE ID=0", dConn)
-            oDA.Fill(oDS, thisPeriod)
-
-
-            Dim oCmd2 = New OleDbCommand(String.Concat("SELECT count([ID]) AS CountOfID FROM ", thisPeriod, " WHERE [BillRunID]=", CLng(rMeta("BillRunID"))), dConn)
-            'dConn.Open()
-            'oCmd2.Transaction = myTrans
-            Dim existingCount As Integer = oCmd2.ExecuteScalar
-            Trace.Warn("existing rec " & existingCount)
-            'dConn.Close()
-
-            '*** if existing count is less than our rMeta(count) then proceed with writing
-            If existingCount < rMeta("count") Then
-                'loop to write in the records
-                For Each myR As DataRow In dtI.Rows
-
-                    If myR("ChargePeriod").ToString = thisPeriod Then
-                        '*** add data to appropriate charge-period table.  note that even though dtI has more cols than
-                        '*** the target table, using itemArray will map across only those we need
-                        Dim newR As DataRow = oDS.Tables(thisPeriod).NewRow()
-                        'copyArray(myR.ItemArray, newR.ItemArray)
-                        newR.ItemArray = myR.ItemArray
-                        'newR("OPCO") = "YY"
-                        oDS.Tables(thisPeriod).Rows.Add(newR)
-                        'Trace.Warn("row added")
-                        'ARGH the problem is dTI does not have same schmea as tbl(thisPeriod) as it had no IDcol
-                        'I might be better off importing the data to tblSource as a dataset but then not writing it
-
-                        'WHAAAAA??
-                        'oDS.Tables(thisPeriod).ImportRow(myR)
-                        'huh, does not add myR to the table.  
-
-                        If newR.HasErrors Then
-                            Trace.Warn("row error = " & r)
-
-                        End If
-
-
-                        r += 1
-                    End If
-
-                Next
-
-                Trace.Warn("added the records " & r)
-                '*** update the table, as a transaction
-                Dim builder As New OleDb.OleDbCommandBuilder(oDA)
-                builder.GetInsertCommand()
-                builder.GetUpdateCommand()
-
-                'oDA.UpdateCommand.Transaction = myTrans
-                '*** now run the transaction itself
-                oDA.ContinueUpdateOnError = False
-                oDA.Update(oDS, thisPeriod)
-                'oDS.Tables(0).HasErrors
-                Trace.Warn("called oDA.update")
-            Else
-                Trace.Warn("records already exist for " & thisPeriod)
-            End If
-
-            Trace.Warn("table done")
-            Trace.Warn(oDS.Tables(thisPeriod).HasErrors)
-
         Next
 
+        Trace.Warn("table checks complete...processing data")
+
+        '*** AGAIN LOOP thro each table, and check metadata on that table
+        '*** WE ARE USING DAO recordsets not an oledb.dataadaptor.   this seems to run at about 60 records per sec
+        '*** 28208 records in 500 sec, yup so about 50-60 records per sec
+        '*** I think the only way to go faster is a linked table, properly datatyped and then SQL bulk insert queries
+
+        Dim rs As DAO.Recordset
+        Dim dbEngine As New DAO.DBEngine
+        Dim ws As DAO.Workspace = dbEngine.Workspaces(0)
+        r = 0
+        Try
+            'start TRANSACTION HERE
+            ws.BeginTrans()
+            'Dim db As DAO.Database = dbEngine.OpenDatabase("C:\Users\Julian\Documents\Visual Studio 2017\source\PCManalytics\primebillerdata.mdb", False)
+            Dim m As Match = Regex.Match(sConn, "(.+)=(.+);")
+            Trace.Warn(m.Groups(2).ToString)
+
+            Dim db As DAO.Database = dbEngine.OpenDatabase((m.Groups(2).ToString), False)
+
+
+            'https://docs.microsoft.com/en-us/office/vba/access/concepts/data-access-objects/use-transactions-in-a-dao-recordset
+            Dim cols As Integer
+
+            'using rs addnew and update, we can get 5000 updates per sec in native acccess.  nope, it runs at about 50 per sec
+            'interop services also seem slow
+
+            For Each rMeta In dtMeta.Rows
+                Dim thisPeriod As String = rMeta("chargePeriod")
+
+                '*** now check the metadata on that table.  The count of records for this [Bill run ID] must be less than the count
+                '*** in Meta data, else we would be double-loading
+                '*** assumes Bill Run ID is a string
+
+                Dim oCmd2 = New OleDbCommand(String.Concat("SELECT count([ID]) AS CountOfID FROM ", thisPeriod, " WHERE [BillRunID]=", CLng(rMeta("BillRunID"))), dConn)
+
+                Dim existingCount As Integer = oCmd2.ExecuteScalar
+                Trace.Warn("existing rec " & existingCount)
+
+
+                '*** if existing count is less than our rMeta(count) then proceed with writing
+                If existingCount < rMeta("count") Then
+                    'loop to write in the records
+                    Dim strSQL As String = String.Empty
+
+                    rs = db.OpenRecordset(thisPeriod)
+                    cols = rs.Fields.Count
+                    For Each myR As DataRow In dtI.Rows
+                        If myR("ChargePeriod").ToString = thisPeriod Then
+                            r += 1
+                            '2018-11-05 approach, use rs.addnew and rs.update
+                            rs.AddNew()
+                            For c = 1 To cols - 1
+                                'ignore the ID column in  posn 0
+                                rs.Fields(c).Value = myR(c)
+                            Next
+                            rs.Update()
+                        End If
+                    Next
+                    rs.Close()
+                    Trace.Warn("added the records " & r)
+
+                Else
+                    Trace.Warn("records already exist for " & thisPeriod)
+                End If
+
+                Trace.Warn("table done")
+
+            Next
+
+            gvDebug.DataSource = dtMeta
+            gvDebug.DataBind()
+
+            'last action is to commit all changes across multiple tables
+            ws.CommitTrans()
+            Trace.Warn("committed the transaction. END")
+            dConn.Dispose()
+            Return "OK, records=" & r
+
+        Catch ex2 As System.Runtime.InteropServices.COMException
+            '**** will be a recordset error of some type
+            Trace.Warn(ex2.Message)
+            If Not rs Is Nothing Then Trace.Warn("FIELD=" & rs.Fields(c).Name & " @ CSV row " & r)
+            ws.Rollback()
+            Return ("FAILED: transactions rolled back. " & ex2.Message)
+        Catch ex As Exception
+            Trace.Warn(ex.ToString)
+            ws.Rollback()
+            Return ("FAILED: transactions rolled back")
+
+        Finally
+            dbEngine = Nothing
+
+        End Try
+
         gvDebug.DataSource = dtMeta
         gvDebug.DataBind()
 
-        'last action is to commit all changes across multiple tables
-        'myTrans.Commit()
-        Trace.Warn("committed the transaction. END")
-        dConn.Dispose()
-        Return "OK, records=" & r
 
-
-        'gvDebug.DataSource = dConn.GetSchema("tables", restrictions)
-        'gvDebug.DataBind()
-        ' dConn.Dispose()
-
-
-        gvDebug.DataSource = dtMeta
-        gvDebug.DataBind()
-
-
-        '2./now find the base table. if it does not exist, create one. [via select into]
-
-        'SELECT tblSource.* INTO tbl2 FROM(tblSource) WHERE (((tblSource.ID) Is Null));
-        'so you can create a new table with the same schema by using tbl2 as a name.  the ID will restart at 1 I think.
-
-        '3/ now as a transaction, add these new records after first checking meta data of target table.
-        'do this for the top 3 months in the new source data
-
-
+        Return 0
 
 
 
     End Function
+
     Function coerceType(ByVal o As Object, ByVal t As Type, maxLen As Object) As Object
         '**** coerce value to the supplied type, or return dbnull.value
         Try
@@ -801,8 +839,8 @@ Public Class Analytics_dataLoad
                     '*** if we co-erce a string its because we want to return null instead of string.empty
                     '*** truncate at 255 chars
                     ' Trace.Warn(CLng(maxLen))
-                    Return strTruncate(o.ToString, 255)
-                    'Return o.ToString.Substring(0, CLng(maxLen))
+                    ' Return strTruncate(o.ToString, 255)  'else too slow!!
+                    Return strTruncate(o.ToString, CLng(maxLen))
                    ' Return (o.ToString.Substring(0, 255))
                    'SUBSTRING is very slow?
 
@@ -843,13 +881,54 @@ Public Class Analytics_dataLoad
 
     End Function
     Function strTruncate(s As String, ByVal maxLen As Integer) As String
-        'If String.IsNullOrEmpty(s) Then Return ""
+        If maxLen <= 0 Then Return s
+
         If s.Length < maxLen Then Return s
         Return s.Substring(0, maxLen)
 
     End Function
 
+    Public Shared Function getKeyNames(tableName As [String], conn As OleDbConnection) As List(Of String)
+        'https://stackoverflow.com/questions/5065086/vb-net-how-can-i-check-if-a-primary-key-exists-in-an-access-db
+        'https://support.microsoft.com/en-au/help/309488/how-to-retrieve-schema-information-by-using-getoledbschematable-and-vi
+        Dim returnList = New List(Of String)()
 
+
+        Dim mySchema As DataTable = TryCast(conn, OleDbConnection).GetOleDbSchemaTable(OleDbSchemaGuid.Primary_Keys, New [Object]() {Nothing, Nothing, tableName})
+
+
+        ' following is a lengthy form of the number '3' :-)
+        Dim columnOrdinalForName As Integer = mySchema.Columns("COLUMN_NAME").Ordinal
+
+        For Each r As DataRow In mySchema.Rows
+            returnList.Add(r.ItemArray(columnOrdinalForName).ToString())
+        Next
+
+        Return returnList
+    End Function
+    Public Shared Function getColLengths(tableName As [String], conn As OleDbConnection) As DataTable
+        Dim returnList = New List(Of String)()
+        Dim mySchema As DataTable = TryCast(conn, OleDbConnection).GetOleDbSchemaTable(OleDbSchemaGuid.Columns, New [Object]() {Nothing, Nothing, tableName})
+        Return mySchema
+
+        'CHARACTER_MAXIMUM_LENGTH for COLUMN_NAME
+        'https://support.microsoft.com/en-au/help/309488/how-to-retrieve-schema-information-by-using-getoledbschematable-and-vi
+    End Function
+
+
+#Region "...NOT USED..."
+    Protected Sub Button1_Click(sender As Object, e As EventArgs) Handles Button1.Click
+        'after hours of messing around, here's the easy way to set the primary key
+        Dim oConn As New OleDbConnection(sData)
+        Dim ocmd As New OleDbCommand("ALTER Table 201810 ADD PRIMARY KEY (ID);", oConn)
+        oConn.Open()
+        ocmd.ExecuteNonQuery()
+        oConn.Close()
+
+        'but its not magic because the dti table schmea is not identical to the target table
+        'hence row import is giving me grief
+
+    End Sub
 
     Sub copyArray(ByVal source(), ByRef target())
         '*** copy array but not first element as this is ID
@@ -858,7 +937,6 @@ Public Class Analytics_dataLoad
         Next
 
     End Sub
-
 
 
     Protected Sub bTest_Click(sender As Object, e As EventArgs) Handles bTest.Click
@@ -880,35 +958,39 @@ Public Class Analytics_dataLoad
         oConn.Dispose()
     End Sub
 
-    Public Shared Function getKeyNames(tableName As [String], conn As OleDbConnection) As List(Of String)
-        'https://stackoverflow.com/questions/5065086/vb-net-how-can-i-check-if-a-primary-key-exists-in-an-access-db
-        'https://support.microsoft.com/en-au/help/309488/how-to-retrieve-schema-information-by-using-getoledbschematable-and-vi
-        Dim returnList = New List(Of String)()
+    Function buildSQLinsert(dcol As DataColumnCollection, dr As DataRow, target As String) As String
+        'build an INSERT VALUES query.  this assumes all cols are present and in correct order.
+        Dim sb As New StringBuilder
+        sb.Append("INSERT INTO ")
+        sb.Append(target)
+        sb.Append(" VALUES (")
 
-
-        Dim mySchema As DataTable = TryCast(conn, OleDbConnection).GetOleDbSchemaTable(OleDbSchemaGuid.Primary_Keys, New [Object]() {Nothing, Nothing, tableName})
-
-
-        ' following is a lengthy form of the number '3' :-)
-        Dim columnOrdinalForName As Integer = mySchema.Columns("COLUMN_NAME").Ordinal
-
-        For Each r As DataRow In mySchema.Rows
-            returnList.Add(r.ItemArray(columnOrdinalForName).ToString())
+        'loop through data.  string values need double quotes
+        'which in turn is a pain because we need to check datatype
+        For Each dc As DataColumn In dcol
+            Trace.Warn(dc.ColumnName & " " & (dr(dc.ColumnName)))
+            If dc.DataType.ToString = "System.String" Then
+                sb.Append(Chr(34))
+                'sb.Append("'")
+                sb.Append(dr(dc.ColumnName))
+                sb.Append(Chr(34))
+                sb.Append(",")
+            ElseIf (dr(dc.ColumnName)) Is DBNull.Value Then
+                sb.Append("NULL")
+                sb.Append(",")
+            Else
+                sb.Append(dr(dc.ColumnName))
+                sb.Append(",")
+            End If
         Next
+        'drop trailing comma
+        sb.Remove(sb.Length - 1, 1)
+        sb.Append(");")
+        Return Regex.Replace(sb.ToString, " 12:00:00 AM", String.Empty)
 
-        Return returnList
+
+
     End Function
 
-    Protected Sub Button1_Click(sender As Object, e As EventArgs) Handles Button1.Click
-        'after hours of messing around, here's the easy way to set the primary key
-        Dim oConn As New OleDbConnection(sData)
-        Dim ocmd As New OleDbCommand("ALTER Table 201810 ADD PRIMARY KEY (ID);", oConn)
-        oConn.Open()
-        ocmd.ExecuteNonQuery()
-        oConn.Close()
-
-        'but its not magic because the dti table schmea is not identical to the target table
-        'hence row import is giving me grief
-
-    End Sub
+#End Region
 End Class

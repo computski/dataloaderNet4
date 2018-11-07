@@ -1,0 +1,176 @@
+/* Default CSS Stylesheet for a new Web Application project */
+/* items prefixed NOT have been deprecated */
+
+	TABLE { BORDER-COLLAPSE: collapse }
+	TR { FONT-SIZE: 11px; FONT-FAMILY: Verdana, Arial, Helvetica, sans-serif }
+	INPUT { FONT-SIZE: 11px; FONT-FAMILY: Verdana, Arial, Helvetica, sans-serif;
+    }
+	SELECT { FONT-SIZE: 11px; FONT-FAMILY: Verdana, Arial, Helvetica, sans-serif }
+	TEXTAREA { FONT-SIZE: 11px; FONT-FAMILY: Verdana, Arial, Helvetica, sans-serif }
+	BODY { FONT-SIZE: 11px; FONT-FAMILY: Verdana, Arial, Helvetica, sans-serif }
+	.btnM { FONT-WEIGHT: bold; FONT-SIZE: x-small;  BORDER-TOP-STYLE: none; BORDER-RIGHT-STYLE: none; BORDER-LEFT-STYLE: none; BACKGROUND-COLOR: #ffffff; TEXT-ALIGN: left; BORDER-BOTTOM-STYLE: none }
+	.btnZ {BORDER-TOP-STYLE: none; BORDER-RIGHT-STYLE: none; BORDER-LEFT-STYLE: none; BORDER-BOTTOM-STYLE: none; BACKGROUND-COLOR: #ffffff; TEXT-ALIGN: left }
+	.grey { BACKGROUND-COLOR: #dddddd }
+	.red { COLOR: #ff0000 }
+	.green { COLOR: #99ff99 }
+	.btnGreen { BACKGROUND-COLOR: #99ff99 }
+	.total { BORDER-RIGHT: medium none; BORDER-TOP: medium none; FONT-WEIGHT: bold; BORDER-LEFT: medium none; BORDER-BOTTOM: medium none }
+	.lock { BORDER-RIGHT: medium none; BORDER-TOP: medium none; BORDER-LEFT: medium none; BORDER-BOTTOM: medium none }
+	.highlight { BACKGROUND-COLOR: yellow }
+	.general { FONT-SIZE: 11px; FONT-FAMILY: Verdana, Arial, Helvetica, sans-serif }
+	.right {float: right;}
+	.rght{position: relative;left: 3cm;}
+	.inactiveHyperlink
+{
+    font-style: normal;
+    color: #CCCCCC;
+    text-decoration: underline;
+}
+	              
+
+
+#myBlockId {
+    position: absolute;
+    left: 100;
+    top: 100;
+    z-index: 2;
+}
+
+#block2
+{
+    border-collapse:collapse;
+    width: 200px;
+    height: 48px;
+    font-size: x-small;
+    position:relative;
+    float: left;
+    top: 0px;
+    left: 700px;
+    text-align:left;
+}
+
+                  
+	/* updated styles 2016-06 */
+             
+#bannerApp
+{
+    border-color: #000000;
+    background-color: #E8F6FE;
+    font-family: Verdana, Arial, Helvetica, sans-serif;
+    font-size: large;
+    font-style: italic;
+    text-align: right;
+    color: #FF0000;
+    font-weight: bold;
+    background-repeat: no-repeat;
+    background-image: url('../img/vz_tick_logo_duck.jpg');
+    height: 48px;
+    padding-top: 10px;
+}
+	             
+	 
+	 #spanLogin
+{
+    font-style: normal;
+    font-size: 11px;
+    font-weight: normal;
+    color: #000000;
+}
+	 
+	#statusBar{z-index:-1;  background-color: #E8F6FE; padding-left:5px;}
+ 
+ .searchBar
+ {BACKGROUND-COLOR: #dddddd;
+ }
+	              
+
+/*	#banner { FONT-WEIGHT: bold; FONT-SIZE: small; COLOR: #ffffff; BACKGROUND-COLOR: #ff0000;  z-index:-1; }*/
+	
+
+
+.AutoCompleteBackground{background-color:white;}
+.AutoCompleteHighlight{background-color:lime;}
+.AutoCompleteDiv
+{ border-bottom:green 1px solid;
+   border-top:green 1px solid;
+    border-left:green 1px solid;
+     border-right:green 1px solid;
+     background-color:White;
+     visibility:hidden;
+     top: 0px;
+     left:0px;
+     position:relative;
+     z-index:999;
+        }
+
+
+#idMotd
+{
+   position:absolute;
+        left: 350px;
+        top: 50px;
+        width: 800px;
+        height: 600px;
+        z-index: 100;
+        background-color:white;
+        display:none
+       }
+       
+       .vrdEx
+{
+    background-color: #FF9966;
+   
+}
+
+
+/* tab control */
+
+ html
+        {
+            background-color:#E8F6FE;
+        }
+        .tabs
+        {
+            position:relative;
+            top:1px;
+            left:10px;
+        }
+        
+        .tab
+{
+    border: solid 1px black; /*background-color:#eeeeee;*/
+    background-color: #E8F6FE; /*was hoping increasing top padding would allow top of box to display*/
+    padding: 2px 10px;
+    /*position:relative; /*JO fix, need pos and top to force top border of tabs to display*/
+    /*top:2px; */
+}
+        .selectedTab
+        {
+            background-color:white;
+            border-bottom:solid 1px white;
+        }
+        
+        
+        .tabContents
+{
+    border: solid 1px black;
+    padding: 10px;
+    background-color: white;
+    /*position: relative; /*JO fix, need pos, top and z-index to ensure tabs meld into contents correctly*/
+    /*top: 3px;*/
+    /*z-index:-1; argh means no buttons can be clicked!!*/
+}
+
+
+
+.content
+{
+    /*width: 950px;*/
+    background-position: #FFFAF0;
+    float: left;
+    padding: 10px;
+    background: #FFFAF0;
+    width: 90%;
+    clear: none;
+   
+}
