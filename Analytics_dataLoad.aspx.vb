@@ -532,7 +532,7 @@ Public Class Analytics_dataLoad
         'WARNING: there is a max request size (and on IIS7 you need to set on server too).  system will bomb with no error page if it is exceeded.
         'in principle, we can demand all files over 10M be sent up as zips
         'https://stackoverflow.com/questions/288612/how-to-increase-the-max-upload-file-size-in-asp-net
-
+        Dim dtStart As DateTime = Now()
 
 
         'LOAD a copy of the target table schema
@@ -645,22 +645,32 @@ Public Class Analytics_dataLoad
         dc.AutoIncrement = True
         dtI.Columns.Add(dc)
         dc.SetOrdinal(0)
+        dtI.Columns.Add(New DataColumn("isFullPeriod", GetType(Boolean)))
 
         '*** add a ssequence number ONLY NEEDED IF USING DATAADAAPTOR later
         r = 1
         For Each myR As DataRow In dtI.Rows
             myR("ID") = r
             r += 1
+
+            If Regex.IsMatch(myR("CompanionProduct") & String.Empty, "Location", RegexOptions.IgnoreCase) Then
+                '*** special case, mark the location identifiers as true
+                myR("isFullPeriod") = True
+            Else
+                '*** work it out from the dates
+                myR("isFullPeriod") = checkFullPeriod(myR("UsageDateFrom"), myR("UsageDateTo"))
+
+            End If
         Next
 
-        dtI.Columns.Add(New DataColumn("isFullPeriod", GetType(Boolean)))
+
         dtI.AcceptChanges()
 
 
         '*** check columncounts match
         Trace.Warn(dtI.Columns.Count)
         Trace.Warn(oDS.Tables("template").Columns.Count)
-        If dtI.Columns.Count <> oDS.Tables("template").Columns.Count Then Throw New ArgumentException("column count on import does not match tblSource")
+        If dtI.Columns.Count <> oDS.Tables("template").Columns.Count Then Throw New ArgumentException("column count on import does Not match tblSource")
 
         '*** calculate metadata for this file
         Dim myView As DataView = dtI.DefaultView
@@ -802,7 +812,7 @@ Public Class Analytics_dataLoad
             ws.CommitTrans()
             Trace.Warn("committed the transaction. END")
             dConn.Dispose()
-            Return "OK, records=" & r
+            Return String.Concat("OK, records=", r, " in ", DateDiff(DateInterval.Second, dtStart, Now), " seconds")
 
         Catch ex2 As System.Runtime.InteropServices.COMException
             '**** will be a recordset error of some type
@@ -915,6 +925,28 @@ Public Class Analytics_dataLoad
         'https://support.microsoft.com/en-au/help/309488/how-to-retrieve-schema-information-by-using-getoledbschematable-and-vi
     End Function
 
+
+
+    Function checkFullPeriod(sFrom As Object, sTo As Object) As Boolean
+        Try
+            '*** checks the date markers are a full period.  special case for 
+            If String.IsNullOrEmpty(sFrom) Or String.IsNullOrEmpty(sTo) Then Return False
+            Dim dt As Date = CDate(sFrom)
+            '*** add a month, which we expect will be the first of the next
+            dt = dt.AddMonths(1)
+            '*** we expect the day to the first 
+            If dt.Day <> 1 Then Return False
+            '*** fail if the end date differs from the expected first of the following month by more than a day
+            If Math.Abs(DateDiff(DateInterval.Day, dt, CDate(sTo))) > 1 Then Return False
+            '*** all tests passed, return true
+            Return True
+        Catch
+            Return False
+        End Try
+
+
+
+    End Function
 
 #Region "...NOT USED..."
     Protected Sub Button1_Click(sender As Object, e As EventArgs) Handles Button1.Click

@@ -1,4 +1,4 @@
-﻿<%@ Page Language="vb" AutoEventWireup="false" CodeBehind="Analytics_dataLoad.aspx.vb" Inherits="PCManalytics.Analytics_dataLoad" Trace="false" %>
+﻿<%@ Page Language="vb" AutoEventWireup="false" CodeBehind="Analytics_dataLoad.aspx.vb" Inherits="PCManalytics.Analytics_dataLoad" Trace="true" %>
 
 <!DOCTYPE html>
 
